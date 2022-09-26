@@ -1,14 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/rabbitmq/amqp091-go"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -20,6 +23,12 @@ type Message struct {
 }
 
 func main() {
+
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
 
 	r := gin.Default()
 
@@ -38,7 +47,11 @@ func main() {
 		SendMessages(RBMQCH, c)
 	})
 
-	ProcessMessages(RBMQCH)
+	r.GET("/messages", func(c *gin.Context) {
+		ListMessages(rdb, c)
+	})
+
+	ProcessMessages(RBMQCH, rdb)
 
 	r.Run(":8000")
 }
@@ -97,7 +110,7 @@ func failOnError(err error, msg string) {
 	}
 }
 
-func ProcessMessages(myRbmqh *amqp091.Channel) {
+func ProcessMessages(myRbmqh *amqp091.Channel, client *redis.Client) {
 	q, err := myRbmqh.QueueDeclare(
 		"RabbitMQ", // name
 		false,      // durable
@@ -127,9 +140,26 @@ func ProcessMessages(myRbmqh *amqp091.Channel) {
 		for d := range msgs {
 			log.Printf("Received a message: %s", d.Body)
 			// save in redis
+			json, err := json.Marshal(Message{Message: string(d.Body)})
+			if err != nil {
+				fmt.Println(err)
+			}
+			m := &Message{
+				Message: string(d.Body),
+			}
+			ctx := context.TODO()
+			err = client.Set(ctx, json, 0).Err()
+			if err != nil {
+				fmt.Println(err)
+			}
+
 		}
 	}()
 
 	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
 	<-forever
+}
+
+func ListMessages(client *redis.Client, c *gin.Context) {
+	messages := make([]Message, 0)
 }
