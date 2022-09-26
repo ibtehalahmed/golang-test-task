@@ -38,6 +38,8 @@ func main() {
 		SendMessages(RBMQCH, c)
 	})
 
+	ProcessMessages(RBMQCH)
+
 	r.Run(":8000")
 }
 
@@ -93,4 +95,41 @@ func failOnError(err error, msg string) {
 	if err != nil {
 		log.Panicf("%s: %s", msg, err)
 	}
+}
+
+func ProcessMessages(myRbmqh *amqp091.Channel) {
+	q, err := myRbmqh.QueueDeclare(
+		"RabbitMQ", // name
+		false,      // durable
+		false,      // delete when unused
+		false,      // exclusive
+		false,      // no-wait
+		nil,        // arguments
+	)
+	if err != nil {
+		failOnError(err, "Failed to process message")
+	}
+	msgs, err := myRbmqh.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		failOnError(err, "Failed to process message")
+	}
+	var forever chan struct{}
+
+	go func() {
+		for d := range msgs {
+			log.Printf("Received a message: %s", d.Body)
+			// save in redis
+		}
+	}()
+
+	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
+	<-forever
 }
